@@ -41,6 +41,7 @@ type Encoder struct {
 	arraysMultiline bool
 	indentSymbol    string
 	indentTables    bool
+	skipMapRoot     bool
 }
 
 // NewEncoder returns a new Encoder that writes to w.
@@ -84,6 +85,12 @@ func (enc *Encoder) SetIndentSymbol(s string) *Encoder {
 // SetIndentTables forces the encoder to intent tables and array tables.
 func (enc *Encoder) SetIndentTables(indent bool) *Encoder {
 	enc.indentTables = indent
+	return enc
+}
+
+// SetSkipMapRoot forces the encoder to skip map root.
+func (enc *Encoder) SetSkipMapRoot(b bool) *Encoder {
+	enc.skipMapRoot = b
 	return enc
 }
 
@@ -204,6 +211,9 @@ type encoderCtx struct {
 
 	// Indentation level
 	indent int
+
+	// Skip map root
+	skipMapRoot bool
 
 	// Options coming from struct tags
 	options valueOptions
@@ -588,9 +598,11 @@ func (enc *Encoder) encodeMap(b []byte, ctx encoderCtx, v reflect.Value) ([]byte
 	)
 
 	iter := v.MapRange()
+	canSkip := false
 	for iter.Next() {
 		k := iter.Key().String()
 		v := iter.Value()
+		canSkip = v.Type().Kind() == reflect.Map
 
 		if isNil(v) {
 			continue
@@ -606,6 +618,7 @@ func (enc *Encoder) encodeMap(b []byte, ctx encoderCtx, v reflect.Value) ([]byte
 	sortEntriesByKey(t.kvs)
 	sortEntriesByKey(t.tables)
 
+	ctx.skipMapRoot = enc.skipMapRoot && canSkip
 	return enc.encodeTable(b, ctx, t)
 }
 
@@ -704,6 +717,7 @@ func (enc *Encoder) encodeStruct(b []byte, ctx encoderCtx, v reflect.Value) ([]b
 
 	walkStruct(ctx, &t, v)
 
+	ctx.skipMapRoot = false
 	return enc.encodeTable(b, ctx, t)
 }
 
@@ -790,13 +804,14 @@ func (enc *Encoder) encodeTable(b []byte, ctx encoderCtx, t table) ([]byte, erro
 	}
 
 	if !ctx.skipTableHeader {
-		b, err = enc.encodeTableHeader(ctx, b)
-		if err != nil {
-			return nil, err
-		}
-
-		if enc.indentTables && len(ctx.parentKey) > 0 {
-			ctx.indent++
+		if len(ctx.parentKey) > 1 || (len(ctx.parentKey) == 1 && !ctx.skipMapRoot) {
+			b, err = enc.encodeTableHeader(ctx, b)
+			if err != nil {
+				return nil, err
+			}
+			if enc.indentTables && len(ctx.parentKey) > 0 {
+				ctx.indent++
+			}
 		}
 	}
 	ctx.skipTableHeader = false

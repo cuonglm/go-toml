@@ -842,6 +842,37 @@ func TestEncoderSetIndentSymbol(t *testing.T) {
 	assert.Equal(t, expected, w.String())
 }
 
+func TestEncoderSetSkipMapRoot(t *testing.T) {
+	tests := []struct {
+		name     string
+		in       interface{}
+		expected string
+	}{
+		{
+			"map root for plain map",
+			map[string]map[string]string{"parent": {"hello": "world"}},
+			fmt.Sprintf("[parent]\n  hello = 'world'\n"),
+		},
+		{
+			"map root for map of map",
+			map[string]map[string]map[string]string{"parent": {"child": {"hello": "world"}}},
+			fmt.Sprintf("[parent.child]\n  hello = 'world'\n"),
+		},
+	}
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var w strings.Builder
+			enc := toml.NewEncoder(&w)
+			enc.SetIndentTables(true)
+			enc.SetSkipMapRoot(true)
+			require.NoError(t, enc.Encode(tc.in))
+			assert.Equal(t, w.String(), tc.expected)
+		})
+	}
+}
+
 func TestEncoderOmitempty(t *testing.T) {
 	type doc struct {
 		String  string            `toml:",omitempty,multiline"`
